@@ -17,6 +17,37 @@ find_package(glm REQUIRED)
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE MODULE_SOURCES "include/*.cppm")
 
+find_program(SLANGC_EXECUTABLE
+    NAMES slangc
+    PATHS 
+        /usr/local/bin
+        /opt/slang/bin
+        /usr/bin
+    DOC "Slang shader compiler"
+    REQUIRED
+)
+set(SHADER_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/shaders/shader.slang)
+# slang compilation function
+function (add_slang_shader_target TARGET)
+  cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
+  set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/shaders)
+  set (ENTRY_POINTS -entry vertMain -entry fragMain)
+  add_custom_command (
+          OUTPUT ${SHADERS_DIR}
+          COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_DIR}
+  )
+  add_custom_command (
+          OUTPUT  ${SHADERS_DIR}/slang.spv
+          COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o slang.spv
+          WORKING_DIRECTORY ${SHADERS_DIR}
+          DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
+          COMMENT "Compiling Slang Shaders"
+          VERBATIM
+  )
+  add_custom_target (${TARGET} DEPENDS ${SHADERS_DIR}/slang.spv)
+endfunction()
+add_slang_shader_target(${PROJECT_NAME}_shaders SOURCES ${SHADER_SOURCES})
+
 # set up Vulkan C++ module
 add_library(VulkanCppModule)
 add_library(Vulkan::cppm ALIAS VulkanCppModule)
@@ -67,3 +98,4 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_link_libraries(${PROJECT_NAME} TriangleApp::module Vulkan::cppm ${GLFW3_LIBRARIES} glm::glm)
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${GLFW3_CFLAGS_OTHER})
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_shaders)

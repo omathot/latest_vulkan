@@ -3,10 +3,8 @@ module;
 // #define VULKAN_HPP_NO_EXCEPTIONS
 
 #include <print>
-#include <map>
 #include <vector>
 #include <iostream>
-#include <exception>
 #include <vulkan/vulkan_raii.hpp>
 #include <algorithm>
 #include <cstdint>
@@ -23,6 +21,7 @@ void HelloTriangleApplication::initVulkan() {
 	pickPhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
+	createImageViews();
 }
 
 void HelloTriangleApplication::initWindow() {
@@ -121,8 +120,8 @@ void HelloTriangleApplication::createSurface() {
 
 void HelloTriangleApplication::createSwapChain() {
 	auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-	auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(surface));
-	auto swapChainExtent = chooseSwapExtent(surfaceCapabilities);
+	swapChainImageFormat = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(surface));
+	swapChainExtent = chooseSwapExtent(surfaceCapabilities);
 	auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
 	minImageCount = (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount)
 					? surfaceCapabilities.maxImageCount
@@ -137,8 +136,8 @@ void HelloTriangleApplication::createSwapChain() {
 		.flags = vk::SwapchainCreateFlagsKHR(),
 		.surface = surface,
 		.minImageCount = minImageCount,
-		.imageFormat = swapChainSurfaceFormat.format,
-		.imageColorSpace = swapChainSurfaceFormat.colorSpace,
+		.imageFormat = swapChainImageFormat,
+		.imageColorSpace = vk::ColorSpaceKHR::eSrgbNonlinear,
 		.imageExtent = swapChainExtent,
 		.imageArrayLayers = 1,
 		.imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
@@ -151,18 +150,35 @@ void HelloTriangleApplication::createSwapChain() {
 	};
 	swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
 	swapChainImages = swapChain.getImages();
-	swapChainSurfaceFormat = swapChainSurfaceFormat.format;
-	swapChainExtent = swapChainExtent;
 }
 
-vk::SurfaceFormatKHR HelloTriangleApplication::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
+void HelloTriangleApplication::createImageViews() {
+	swapChainImageViews.clear();
+
+	vk::ImageViewCreateInfo imageViewCreateInfo{
+		.viewType = vk::ImageViewType::e2D,
+		.format = swapChainImageFormat,
+		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+	};
+
+	for (auto image: swapChainImages) {
+		imageViewCreateInfo.image = image;
+		swapChainImageViews.emplace_back(device, imageViewCreateInfo);
+	}
+}
+
+void HelloTriangleApplication::createGraphicsPipeline() {
+	//
+}
+
+vk::Format HelloTriangleApplication::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
 	for (const auto& availableFormat : availableFormats) {
 		if (availableFormat.format == vk::Format::eB8G8R8A8Srgb && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-			return availableFormat;
+			return availableFormat.format;
 		}
 	}
 	// could find "next best" but for now whatevs
-	return availableFormats[0];
+	return availableFormats[0].format;
 }
 
 vk::PresentModeKHR HelloTriangleApplication::chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
