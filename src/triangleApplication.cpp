@@ -1,4 +1,3 @@
-#include <vulkan/vulkan_structs.hpp>
 module;
 #define GLFW_INCLUDE_VULKAN
 // #define VULKAN_HPP_NO_EXCEPTIONS
@@ -109,6 +108,14 @@ void HelloTriangleApplication::setupDebugMessenger() {
 	debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
 }
 
+void HelloTriangleApplication::createSurface() {
+	VkSurfaceKHR _surface;
+	if (glfwCreateWindowSurface(*instance, window, nullptr, &_surface) != 0) {
+		throw std::runtime_error("Failed to create window surface!");
+	}
+	surface = vk::raii::SurfaceKHR(instance, _surface);
+}
+
 void HelloTriangleApplication::pickPhysicalDevice() {
 	auto devices = instance.enumeratePhysicalDevices();
 	if (devices.empty())
@@ -126,7 +133,7 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 			isSuitable = isSuitable && (qfpIter != queueFamilies.end());
 			auto extensions = device.enumerateDeviceExtensionProperties();
 			bool found = true;
-			for (auto const& extension: deviceExtensions) {
+			for (auto const& extension: requiredDeviceExtension) {
 				auto extensionIter = std::ranges::find_if(extensions, [extension](auto const& ext) {return strcmp(ext.extensionName, extension) == 0;});
 				found = found && extensionIter != extensions.end();
 			}
@@ -163,16 +170,27 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 
 void HelloTriangleApplication::createLogicalDevice() {
 	std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+	auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp)
+							{return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);});
+    assert(graphicsQueueFamilyProperty != queueFamilyProperties.end() && "No graphics queue family found!");
+    auto graphicsIndex = static_cast<uint32_t>( std::distance( queueFamilyProperties.begin(), graphicsQueueFamilyProperty ) );
 
 	float queuePriority = 0.0f;
-	vk::PhysicalDeviceFeatures deviceFeatures;
 	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
 		{},
 		{.dynamicRendering = true},
 		{.extendedDynamicState = true}
 	};
-	vk::DeviceQueueCreateInfo { .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
-
+	vk::DeviceQueueCreateInfo deviceQueueCreateInfo{ .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
+	vk::DeviceCreateInfo deviceCreateInfo {
+		.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+		.queueCreateInfoCount = 1,
+		.pQueueCreateInfos = &deviceQueueCreateInfo,
+		.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
+		.ppEnabledExtensionNames = requiredDeviceExtension.data(),
+	};
+	device = vk::raii::Device(physicalDevice, deviceCreateInfo);
+	graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
 }
 
 uint32_t HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {

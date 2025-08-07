@@ -13,7 +13,7 @@ export constexpr uint32_t HEIGHT = 600;
 export std::vector validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
-export std::vector<const char*> deviceExtensions = {
+export std::vector<const char*> requiredDeviceExtension = {
 	vk::KHRSwapchainExtensionName,
 	vk::KHRSpirv14ExtensionName,
 	vk::KHRSynchronization2ExtensionName,
@@ -41,11 +41,14 @@ private:
 	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 	vk::raii::PhysicalDevice physicalDevice         = nullptr;
 	vk::raii::Device device                         = nullptr;
+	vk::raii::Queue graphicsQueue                   = nullptr;
+	vk::raii::SurfaceKHR surface                    = nullptr;
 
 	void initVulkan();
 	void initWindow();
 	void createInstance();
 	void setupDebugMessenger();
+	void createSurface();
 	void pickPhysicalDevice();
 	void createLogicalDevice();
 	uint32_t findQueueFamilies(VkPhysicalDevice device);
