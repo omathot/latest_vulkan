@@ -19,7 +19,9 @@ module triangleApplication;
 void HelloTriangleApplication::initVulkan() {
 	createInstance();
 	setupDebugMessenger();
+	createSurface();
 	pickPhysicalDevice();
+	createLogicalDevice();
 }
 
 void HelloTriangleApplication::initWindow() {
@@ -133,7 +135,7 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 			isSuitable = isSuitable && (qfpIter != queueFamilies.end());
 			auto extensions = device.enumerateDeviceExtensionProperties();
 			bool found = true;
-			for (auto const& extension: requiredDeviceExtension) {
+			for (auto const& extension: requiredDeviceExtensions) {
 				auto extensionIter = std::ranges::find_if(extensions, [extension](auto const& ext) {return strcmp(ext.extensionName, extension) == 0;});
 				found = found && extensionIter != extensions.end();
 			}
@@ -170,27 +172,61 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 
 void HelloTriangleApplication::createLogicalDevice() {
 	std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-	auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp)
-							{return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);});
-    assert(graphicsQueueFamilyProperty != queueFamilyProperties.end() && "No graphics queue family found!");
-    auto graphicsIndex = static_cast<uint32_t>( std::distance( queueFamilyProperties.begin(), graphicsQueueFamilyProperty ) );
 
+	auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp)
+													{return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);});
+	auto graphicsIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+	auto presentIndex = physicalDevice.getSurfaceSupportKHR(graphicsIndex, *surface)
+										? graphicsIndex
+										: static_cast<uint32_t>(queueFamilyProperties.size());
+	if (presentIndex == queueFamilyProperties.size()) {
+		// graphicsIndex doesn't support present -> look for one that supports both graphics and present
+		for (size_t i = 0; i < queueFamilyProperties.size(); i++) {
+			if ((queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) && physicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), *surface)) {
+				graphicsIndex = static_cast<uint32_t>(i);
+				presentIndex = graphicsIndex;
+				break;
+			}
+		}
+	}
+	if (presentIndex == queueFamilyProperties.size()) {
+		// nothing like a single family index that supports both grahpics and present
+		// -> look for another family that supports present
+		for (size_t i = 0; i < queueFamilyProperties.size(); i++) {
+			if (physicalDevice.getSurfaceSupportKHR(static_cast<uint32_t>(i), *surface)) {
+				presentIndex = static_cast<uint32_t>(i);
+				break;
+			}
+		}
+	}
+	if ((graphicsIndex == queueFamilyProperties.size()) || (presentIndex == queueFamilyProperties.size())) {
+		throw std::runtime_error("Could not find a queue for graphics or present -> terminating");
+	}
+
+	// query Vulkan 1.3 features
+	auto features = physicalDevice.getFeatures2();
+	vk::PhysicalDeviceVulkan13Features vulkan13Features;
+	vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT extendedDynamicStateFeatures;
+	vulkan13Features.dynamicRendering = vk::True;
+	extendedDynamicStateFeatures.extendedDynamicState = vk::True;
+	vulkan13Features.pNext = &extendedDynamicStateFeatures;
+	features.pNext = &vulkan13Features;
+
+
+	// create device
 	float queuePriority = 0.0f;
-	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-		{},
-		{.dynamicRendering = true},
-		{.extendedDynamicState = true}
-	};
 	vk::DeviceQueueCreateInfo deviceQueueCreateInfo{ .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
 	vk::DeviceCreateInfo deviceCreateInfo {
-		.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+		.pNext = &features,
 		.queueCreateInfoCount = 1,
 		.pQueueCreateInfos = &deviceQueueCreateInfo,
-		.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
-		.ppEnabledExtensionNames = requiredDeviceExtension.data(),
+		.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtensions.size()),
+		.ppEnabledExtensionNames = requiredDeviceExtensions.data(),
 	};
 	device = vk::raii::Device(physicalDevice, deviceCreateInfo);
 	graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+	presentQueue = vk::raii::Queue(device, presentIndex, 0);
+	std::println("graphicsIndex = {}, presentIndex = {}", graphicsIndex, presentIndex);
 }
 
 uint32_t HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {
