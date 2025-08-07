@@ -44,12 +44,20 @@ private:
 	vk::raii::Queue graphicsQueue                   = nullptr;
 	vk::raii::Queue presentQueue                    = nullptr;
 	vk::raii::SurfaceKHR surface                    = nullptr;
+	vk::raii::SwapchainKHR swapChain                = nullptr;
+	std::vector<vk::Image> swapChainImages;
+	vk::Format swapChainImageFormat                 = vk::Format::eUndefined;
+	vk::Extent2D swapChainExtent                    = vk::Extent2D::NativeType();
 
 	void initVulkan();
 	void initWindow();
 	void createInstance();
 	void setupDebugMessenger();
 	void createSurface();
+	void createSwapChain();
+	vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
+	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
+	vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
 	void pickPhysicalDevice();
 	void createLogicalDevice();
 	uint32_t findQueueFamilies(VkPhysicalDevice device);
