@@ -10,6 +10,7 @@ export module triangleApplication;
 
 export constexpr uint32_t WIDTH  = 800;
 export constexpr uint32_t HEIGHT = 600;
+export constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 export std::vector validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -46,6 +47,8 @@ private:
 	vk::raii::PhysicalDevice physicalDevice         = nullptr;
 	vk::raii::Device device                         = nullptr;
 	uint32_t graphicsIndex                          = ~0;
+	uint32_t currentFrame                           = 0;
+	uint32_t semaphoreIndex                         = 0;
 	vk::raii::Queue graphicsQueue                   = nullptr;
 	vk::raii::Queue presentQueue                    = nullptr;
 	vk::raii::SurfaceKHR surface                    = nullptr;
@@ -60,11 +63,11 @@ private:
 	vk::raii::Pipeline graphicsPipeline             = nullptr;
 
 	vk::raii::CommandPool commandPool               = nullptr;
-	vk::raii::CommandBuffer commandBuffer           = nullptr;
+	std::vector<vk::raii::CommandBuffer> commandBuffers;
 
-	vk::raii::Semaphore presentCompleteSemaphore    = nullptr;
-	vk::raii::Semaphore renderFinishedSemaphore     = nullptr;
-	vk::raii::Fence drawFence                       = nullptr;
+	std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
+	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+	std::vector<vk::raii::Fence> inFlightFences;
 
 	void drawFrame();
 
@@ -74,6 +77,8 @@ private:
 	void setupDebugMessenger();
 	void createSurface();
 	void createSwapChain();
+	void cleanupSwapChain();
+	void recreateSwapChain();
 	void createImageViews();
 	void createGraphicsPipeline();
 	void createCommandPool();

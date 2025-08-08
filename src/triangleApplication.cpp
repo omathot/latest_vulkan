@@ -156,6 +156,19 @@ void HelloTriangleApplication::createSwapChain() {
 	swapChainImages = swapChain.getImages();
 }
 
+void HelloTriangleApplication::recreateSwapChain() {
+	device.waitIdle();
+	cleanupSwapChain();
+
+	createSwapChain();
+	createImageViews();
+}
+
+void HelloTriangleApplication::cleanupSwapChain() {
+	swapChainImageViews.clear();
+	swapChain = nullptr;
+}
+
 void HelloTriangleApplication::createImageViews() {
 	swapChainImageViews.clear();
 
@@ -249,9 +262,16 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 }
 
 void HelloTriangleApplication::createSyncObjects() {
-	presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}); // WARN! diff from tutorial *AND* source code
-	renderFinishedSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{});
-	drawFence = vk::raii::Fence(device, {.flags = vk::FenceCreateFlagBits::eSignaled});
+	presentCompleteSemaphores.clear();
+	renderFinishedSemaphores.clear();
+	inFlightFences.clear();
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+		inFlightFences.emplace_back(device, vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled));
+	}
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
+		presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+		renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo{});
+	}
 }
 
 void HelloTriangleApplication::createCommandPool() {
@@ -260,16 +280,17 @@ void HelloTriangleApplication::createCommandPool() {
 }
 
 void HelloTriangleApplication::createCommandBuffer() {
+	commandBuffers.clear();
 	vk::CommandBufferAllocateInfo allocInfo{
 		.commandPool = commandPool,
 		.level = vk::CommandBufferLevel::ePrimary,
-		.commandBufferCount = 1
+		.commandBufferCount = MAX_FRAMES_IN_FLIGHT,
 	};
-	commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+	commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
 }
 
 void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
-	commandBuffer.begin({});
+	commandBuffers[currentFrame].begin({});
 	transitionImageLayout(
 		imageIndex,
 		vk::ImageLayout::eUndefined,
@@ -294,13 +315,13 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &attachmentInfo
 	};
-	commandBuffer.beginRendering(renderingInfo);
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+	commandBuffers[currentFrame].beginRendering(renderingInfo);
+	commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 	// set dynamic states
-	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-	commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-	commandBuffer.draw(3, 1, 0, 0);
-	commandBuffer.endRendering();
+	commandBuffers[currentFrame].setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+	commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+	commandBuffers[currentFrame].draw(3, 1, 0, 0);
+	commandBuffers[currentFrame].endRendering();
 	transitionImageLayout(
 		imageIndex,
 		vk::ImageLayout::eColorAttachmentOptimal,
@@ -310,7 +331,7 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::PipelineStageFlagBits2::eBottomOfPipe
 	);
-	commandBuffer.end();
+	commandBuffers[currentFrame].end();
 }
 
 void HelloTriangleApplication::transitionImageLayout(
@@ -345,7 +366,7 @@ void HelloTriangleApplication::transitionImageLayout(
 		.imageMemoryBarrierCount = 1,
 		.pImageMemoryBarriers = &barrier,
 	};
-	commandBuffer.pipelineBarrier2(dependencyInfo);
+	commandBuffers[currentFrame].pipelineBarrier2(dependencyInfo);
 }
 
 vk::raii::ShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) const {
@@ -523,37 +544,55 @@ void HelloTriangleApplication::mainLoop() {
 	device.waitIdle();
 }
 void HelloTriangleApplication::cleanup() {
+	cleanupSwapChain();
+
 	glfwDestroyWindow(window);
 	glfwTerminate();
 }
 
 void HelloTriangleApplication::drawFrame() {
-	device.waitIdle();
-	auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+	while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX)); // you can do that??
+	auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr);
+	if (result == vk::Result::eErrorOutOfDateKHR) {
+		recreateSwapChain();
+		return;
+	}
+	if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+		throw std::runtime_error("failed to  acquire swap chain image!");
+	}
+	device.resetFences(*inFlightFences[currentFrame]);
+
+	commandBuffers[currentFrame].reset();
 	recordCommandBuffer(imageIndex);
-	device.resetFences(*drawFence);
 
 	vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 	const vk::SubmitInfo submitInfo{
 		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = &*presentCompleteSemaphore,
+		.pWaitSemaphores = &*presentCompleteSemaphores[semaphoreIndex],
 		.pWaitDstStageMask = &waitDestinationStageMask,
 		.commandBufferCount = 1,
-		.pCommandBuffers = &*commandBuffer,
+		.pCommandBuffers = &*commandBuffers[currentFrame],
 		.signalSemaphoreCount = 1,
-		.pSignalSemaphores = &*renderFinishedSemaphore,
+		.pSignalSemaphores = &*renderFinishedSemaphores[imageIndex],
 	};
-	graphicsQueue.submit(submitInfo, *drawFence);
-	while (vk::Result::eTimeout == device.waitForFences(*drawFence, vk::True, UINT64_MAX)); // you can do that??
+	graphicsQueue.submit(submitInfo, *inFlightFences[currentFrame]);
 	const vk::PresentInfoKHR presentInfoKHR{
 		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = &*renderFinishedSemaphore,
+		.pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
 		.swapchainCount = 1,
 		.pSwapchains = &*swapChain,
 		.pImageIndices = &imageIndex,
 		.pResults = nullptr, // optional
 	};
 	result = presentQueue.presentKHR(presentInfoKHR);
+	if (result == vk::Result::eErrorOutOfDateKHR) {
+		recreateSwapChain();
+	}
+	if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+		throw std::runtime_error("failed to  acquire swap chain image!");
+	}
+	semaphoreIndex = (semaphoreIndex + 1) % presentCompleteSemaphores.size();
+	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 
