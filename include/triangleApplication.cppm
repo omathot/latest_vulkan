@@ -40,13 +40,16 @@ public:
 private:
 	vk::raii::PipelineLayout pipelineLayout         = nullptr;
 	vk::raii::Pipeline graphicsPipeline             = nullptr;
-	
-	vk::raii::Context  context;
-	GLFWwindow*        window                       = nullptr;
+	vk::raii::CommandPool commandPool               = nullptr;
+	vk::raii::CommandBuffer commandBuffer           = nullptr;
+
+	vk::raii::Context context;
+	GLFWwindow* window                              = nullptr;
 	vk::raii::Instance instance                     = nullptr;
 	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 	vk::raii::PhysicalDevice physicalDevice         = nullptr;
 	vk::raii::Device device                         = nullptr;
+	uint32_t graphicsIndex                          = ~0;
 	vk::raii::Queue graphicsQueue                   = nullptr;
 	vk::raii::Queue presentQueue                    = nullptr;
 	vk::raii::SurfaceKHR surface                    = nullptr;
@@ -57,6 +60,8 @@ private:
 	vk::Extent2D swapChainExtent                    = vk::Extent2D::NativeType();
 	std::vector<vk::raii::ImageView> swapChainImageViews;
 
+	void drawFrame();
+
 	void initVulkan();
 	void initWindow();
 	void createInstance();
@@ -65,6 +70,18 @@ private:
 	void createSwapChain();
 	void createImageViews();
 	void createGraphicsPipeline();
+	void createCommandPool();
+	void createCommandBuffer();
+	void recordCommandBuffer();
+	void transitionImageLayout(
+		uint32_t imageIndex,
+		vk::ImageLayout oldLayout,
+		vk::ImageLayout newLayout,
+		vk::AccessFlags2 srcAccessMask,
+		vk::AccessFlags2 dstAccessMask,
+		vk::PipelineStageFlags2 srcStageMask,
+		vk::PipelineStageFlags2 dstStageMask
+	);
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
@@ -76,7 +93,7 @@ private:
 	void mainLoop();
 	void cleanup();
 
-	
+
 	static std::vector<char> readFile(const std::string& filename);
 
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
