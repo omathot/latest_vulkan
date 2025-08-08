@@ -49,6 +49,7 @@ private:
 	uint32_t graphicsIndex                          = ~0;
 	uint32_t currentFrame                           = 0;
 	uint32_t semaphoreIndex                         = 0;
+	bool frameBufferResized                         = false;
 	vk::raii::Queue graphicsQueue                   = nullptr;
 	vk::raii::Queue presentQueue                    = nullptr;
 	vk::raii::SurfaceKHR surface                    = nullptr;
@@ -106,6 +107,7 @@ private:
 	void cleanup();
 
 
+	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 	static std::vector<char> readFile(const std::string& filename);
 
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,

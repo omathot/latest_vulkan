@@ -32,12 +32,14 @@ void HelloTriangleApplication::initWindow() {
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	// trying to fix wayland transparent windows when no surface
 	glfwWindowHint(GLFW_ALPHA_BITS, 0);
 	glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);
 
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+	glfwSetWindowUserPointer(window, this);
+	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 }
 
 void HelloTriangleApplication::createInstance() {
@@ -157,6 +159,12 @@ void HelloTriangleApplication::createSwapChain() {
 }
 
 void HelloTriangleApplication::recreateSwapChain() {
+	int width, height = 0;
+	glfwGetFramebufferSize(window, &width, &height);
+	while (width == 0 && height == 0) {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents();
+	}
 	device.waitIdle();
 	cleanupSwapChain();
 
@@ -553,7 +561,8 @@ void HelloTriangleApplication::cleanup() {
 void HelloTriangleApplication::drawFrame() {
 	while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX)); // you can do that??
 	auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr);
-	if (result == vk::Result::eErrorOutOfDateKHR) {
+	if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
+		frameBufferResized = false;
 		recreateSwapChain();
 		return;
 	}
@@ -586,6 +595,7 @@ void HelloTriangleApplication::drawFrame() {
 	};
 	result = presentQueue.presentKHR(presentInfoKHR);
 	if (result == vk::Result::eErrorOutOfDateKHR) {
+		frameBufferResized = false;
 		recreateSwapChain();
 	}
 	if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
@@ -607,6 +617,11 @@ std::vector<char> HelloTriangleApplication::readFile(const std::string& filename
 	file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
 	file.close();
 	return buffer;
+}
+
+void HelloTriangleApplication::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+	auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+	app->frameBufferResized = true;
 }
 
 
