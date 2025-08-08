@@ -2,6 +2,7 @@ module;
 #include <GLFW/glfw3.h>
 #include <cstdint>
 #include <vector>
+#include <fstream>
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -18,6 +19,8 @@ export std::vector<const char*> requiredDeviceExtensions = {
 	vk::KHRSpirv14ExtensionName,
 	vk::KHRSynchronization2ExtensionName,
 	vk::KHRCreateRenderpass2ExtensionName,
+	// needed for m1mac asahi linux
+	vk::KHRShaderDrawParametersExtensionName
 };
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -35,8 +38,11 @@ public:
 	}
 
 private:
-	GLFWwindow*        window                       = nullptr;
+	vk::raii::PipelineLayout pipelineLayout         = nullptr;
+	vk::raii::Pipeline graphicsPipeline             = nullptr;
+	
 	vk::raii::Context  context;
+	GLFWwindow*        window                       = nullptr;
 	vk::raii::Instance instance                     = nullptr;
 	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 	vk::raii::PhysicalDevice physicalDevice         = nullptr;
@@ -59,6 +65,7 @@ private:
 	void createSwapChain();
 	void createImageViews();
 	void createGraphicsPipeline();
+	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
 	vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
@@ -68,6 +75,9 @@ private:
 	std::vector<const char*> getRequiredExtensions();
 	void mainLoop();
 	void cleanup();
+
+	
+	static std::vector<char> readFile(const std::string& filename);
 
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
 	                                                      vk::DebugUtilsMessageTypeFlagsEXT type,
