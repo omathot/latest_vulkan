@@ -38,13 +38,9 @@ public:
 	}
 
 private:
-	vk::raii::PipelineLayout pipelineLayout         = nullptr;
-	vk::raii::Pipeline graphicsPipeline             = nullptr;
-	vk::raii::CommandPool commandPool               = nullptr;
-	vk::raii::CommandBuffer commandBuffer           = nullptr;
-
-	vk::raii::Context context;
 	GLFWwindow* window                              = nullptr;
+	vk::raii::Context context;
+
 	vk::raii::Instance instance                     = nullptr;
 	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 	vk::raii::PhysicalDevice physicalDevice         = nullptr;
@@ -60,6 +56,16 @@ private:
 	vk::Extent2D swapChainExtent                    = vk::Extent2D::NativeType();
 	std::vector<vk::raii::ImageView> swapChainImageViews;
 
+	vk::raii::PipelineLayout pipelineLayout         = nullptr;
+	vk::raii::Pipeline graphicsPipeline             = nullptr;
+
+	vk::raii::CommandPool commandPool               = nullptr;
+	vk::raii::CommandBuffer commandBuffer           = nullptr;
+
+	vk::raii::Semaphore presentCompleteSemaphore    = nullptr;
+	vk::raii::Semaphore renderFinishedSemaphore     = nullptr;
+	vk::raii::Fence drawFence                       = nullptr;
+
 	void drawFrame();
 
 	void initVulkan();
@@ -72,7 +78,8 @@ private:
 	void createGraphicsPipeline();
 	void createCommandPool();
 	void createCommandBuffer();
-	void recordCommandBuffer();
+	void createSyncObjects();
+	void recordCommandBuffer(uint32_t imageIndex);
 	void transitionImageLayout(
 		uint32_t imageIndex,
 		vk::ImageLayout oldLayout,

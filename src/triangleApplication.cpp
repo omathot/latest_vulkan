@@ -23,6 +23,9 @@ void HelloTriangleApplication::initVulkan() {
 	createSwapChain();
 	createImageViews();
 	createGraphicsPipeline();
+	createCommandPool();
+	createCommandBuffer();
+	createSyncObjects();
 }
 
 void HelloTriangleApplication::initWindow() {
@@ -245,6 +248,12 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 	graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 }
 
+void HelloTriangleApplication::createSyncObjects() {
+	presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{}); // WARN! diff from tutorial *AND* source code
+	renderFinishedSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo{});
+	drawFence = vk::raii::Fence(device, {.flags = vk::FenceCreateFlagBits::eSignaled});
+}
+
 void HelloTriangleApplication::createCommandPool() {
 	vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsIndex};
 	commandPool = vk::raii::CommandPool(device, poolInfo);
@@ -259,10 +268,10 @@ void HelloTriangleApplication::createCommandBuffer() {
 	commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
 }
 
-void HelloTriangleApplication::recordCommandBuffer() {
+void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 	commandBuffer.begin({});
 	transitionImageLayout(
-		graphicsIndex,
+		imageIndex,
 		vk::ImageLayout::eUndefined,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		{},
@@ -273,7 +282,7 @@ void HelloTriangleApplication::recordCommandBuffer() {
 
 	vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 	vk::RenderingAttachmentInfo attachmentInfo = {
-		.imageView = swapChainImageViews[graphicsIndex],
+		.imageView = swapChainImageViews[imageIndex],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eClear,
 		.storeOp = vk::AttachmentStoreOp::eStore,
@@ -293,7 +302,7 @@ void HelloTriangleApplication::recordCommandBuffer() {
 	commandBuffer.draw(3, 1, 0, 0);
 	commandBuffer.endRendering();
 	transitionImageLayout(
-		graphicsIndex,
+		imageIndex,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::ePresentSrcKHR,
 		vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -465,20 +474,17 @@ void HelloTriangleApplication::createLogicalDevice() {
 	}
 
 	// query Vulkan 1.3 features
-	auto features = physicalDevice.getFeatures2();
-	vk::PhysicalDeviceVulkan13Features vulkan13Features;
-	vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT extendedDynamicStateFeatures;
-	vulkan13Features.dynamicRendering = vk::True;
-	extendedDynamicStateFeatures.extendedDynamicState = vk::True;
-	vulkan13Features.pNext = &extendedDynamicStateFeatures;
-	features.pNext = &vulkan13Features;
-
+	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+		{},                                                     // vk::PhysicalDeviceFeatures2
+		{.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
+		{.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+	};
 
 	// create device
 	float queuePriority = 0.0f;
 	vk::DeviceQueueCreateInfo deviceQueueCreateInfo{ .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
 	vk::DeviceCreateInfo deviceCreateInfo {
-		.pNext = &features,
+		.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
 		.queueCreateInfoCount = 1,
 		.pQueueCreateInfos = &deviceQueueCreateInfo,
 		.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtensions.size()),
@@ -514,6 +520,7 @@ void HelloTriangleApplication::mainLoop() {
 		glfwPollEvents();
 		drawFrame();
 	}
+	device.waitIdle();
 }
 void HelloTriangleApplication::cleanup() {
 	glfwDestroyWindow(window);
@@ -521,7 +528,32 @@ void HelloTriangleApplication::cleanup() {
 }
 
 void HelloTriangleApplication::drawFrame() {
-	//
+	device.waitIdle();
+	auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+	recordCommandBuffer(imageIndex);
+	device.resetFences(*drawFence);
+
+	vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+	const vk::SubmitInfo submitInfo{
+		.waitSemaphoreCount = 1,
+		.pWaitSemaphores = &*presentCompleteSemaphore,
+		.pWaitDstStageMask = &waitDestinationStageMask,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &*commandBuffer,
+		.signalSemaphoreCount = 1,
+		.pSignalSemaphores = &*renderFinishedSemaphore,
+	};
+	graphicsQueue.submit(submitInfo, *drawFence);
+	while (vk::Result::eTimeout == device.waitForFences(*drawFence, vk::True, UINT64_MAX)); // you can do that??
+	const vk::PresentInfoKHR presentInfoKHR{
+		.waitSemaphoreCount = 1,
+		.pWaitSemaphores = &*renderFinishedSemaphore,
+		.swapchainCount = 1,
+		.pSwapchains = &*swapChain,
+		.pImageIndices = &imageIndex,
+		.pResults = nullptr, // optional
+	};
+	result = presentQueue.presentKHR(presentInfoKHR);
 }
 
 
