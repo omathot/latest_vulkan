@@ -1,4 +1,7 @@
 module;
+// #define VMA_IMPLEMENTATION
+// #define VMA_VULKAN_VERSION 1003000
+
 #include <GLFW/glfw3.h>
 #include <cstdint>
 #include <vector>
@@ -39,22 +42,25 @@ struct Vertex {
 	static vk::VertexInputBindingDescription getBindingDescription();
 	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions();
 };
-export const std::vector<Vertex> vertices = {
-    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+const std::vector<Vertex> vertices = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 };
+const std::vector<uint16_t> indices = {
+	0, 1, 2, 2, 3, 0
+};
+// export const std::vector<Vertex> vertices = {
+//     {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+//     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+//     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+// };
 // export const std::vector<Vertex> vertices = {
 //     {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 //     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
 //     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 // };
-
-struct VmaBuffer {
-	vk::Buffer buffer        = nullptr;
-	VmaAllocation allocation = nullptr;
-	VmaAllocator allocator   = nullptr;
-};
 
 export class HelloTriangleApplication {
 public:
@@ -97,17 +103,20 @@ private:
 	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::raii::Fence> inFlightFences;
 
-	VmaAllocator allocator                          = nullptr;
 
 	vk::raii::Buffer vertexBuffer                   = nullptr;
 	vk::raii::DeviceMemory vertexBufferMemory       = nullptr;
+	vk::raii::Buffer indexBuffer                    = nullptr;
+	vk::raii::DeviceMemory indexBufferMemory        = nullptr;
 
 	void drawFrame();
 
-	void initVulkan();
 	void initWindow();
+	void initVulkan();
 	void createInstance();
 	void setupDebugMessenger();
+	void pickPhysicalDevice();
+	void createLogicalDevice();
 	void createSurface();
 	void createSwapChain();
 	void cleanupSwapChain();
@@ -116,6 +125,7 @@ private:
 	void createGraphicsPipeline();
 	void createCommandPool();
 	void createVertexBuffer();
+	void createIndexBuffer();
 	void createBuffer(
 		vk::DeviceSize size,
 		vk::BufferUsageFlags usage,
@@ -140,8 +150,6 @@ private:
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
 	vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
-	void pickPhysicalDevice();
-	void createLogicalDevice();
 	uint32_t findQueueFamilies(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
 	uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);

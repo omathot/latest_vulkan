@@ -25,6 +25,7 @@ void HelloTriangleApplication::initVulkan() {
 	createGraphicsPipeline();
 	createCommandPool();
 	createVertexBuffer();
+	createIndexBuffer();
 	createCommandBuffer();
 	createSyncObjects();
 }
@@ -113,6 +114,7 @@ void HelloTriangleApplication::setupDebugMessenger() {
 	};
 	debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
 }
+
 
 void HelloTriangleApplication::createSurface() {
 	VkSurfaceKHR _surface;
@@ -320,6 +322,33 @@ void HelloTriangleApplication::createVertexBuffer() {
 	copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 }
 
+void HelloTriangleApplication::createIndexBuffer() {
+	vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+	vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+	vk::raii::Buffer stagingBuffer = nullptr;
+	createBuffer(
+		bufferSize,
+		vk::BufferUsageFlagBits::eTransferSrc,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+		stagingBuffer,
+		stagingBufferMemory
+	);
+
+	void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+	memcpy(dataStaging, indices.data(), bufferSize);
+	stagingBufferMemory.unmapMemory();
+
+	createBuffer(
+		bufferSize,
+		vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		indexBuffer,
+		indexBufferMemory
+	);
+	copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+}
+
 void HelloTriangleApplication::createBuffer(
 	vk::DeviceSize size,
 	vk::BufferUsageFlags usage,
@@ -394,12 +423,16 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 	};
 	commandBuffers[currentFrame].beginRendering(renderingInfo);
 	commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+	commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
+	commandBuffers[currentFrame].bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
+
 	// set dynamic states
 	commandBuffers[currentFrame].setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 	commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
 	commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
-	commandBuffers[currentFrame].draw(3, 1, 0, 0);
+	commandBuffers[currentFrame].drawIndexed(indices.size(), 1, 0, 0, 0);
+	// commandBuffers[currentFrame].draw(vertices.size(), 1, 0, 0);
 	commandBuffers[currentFrame].endRendering();
 	transitionImageLayout(
 		imageIndex,
