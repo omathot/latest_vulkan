@@ -107,6 +107,13 @@ private:
 	void createGraphicsPipeline();
 	void createCommandPool();
 	void createVertexBuffer();
+	void createBuffer(
+		vk::DeviceSize size,
+		vk::BufferUsageFlags usage,
+		vk::MemoryPropertyFlags properties,
+		vk::raii::Buffer& buffer,
+		vk::raii::DeviceMemory& deviceMemory
+	);
 	void createCommandBuffer();
 	void createSyncObjects();
 	void recordCommandBuffer(uint32_t imageIndex);
@@ -119,6 +126,7 @@ private:
 		vk::PipelineStageFlags2 srcStageMask,
 		vk::PipelineStageFlags2 dstStageMask
 	);
+	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
