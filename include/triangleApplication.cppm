@@ -6,6 +6,7 @@ module;
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
+#include <vk_mem_alloc.h>
 
 export module triangleApplication;
 
@@ -49,6 +50,12 @@ export const std::vector<Vertex> vertices = {
 //     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 // };
 
+struct VmaBuffer {
+	vk::Buffer buffer        = nullptr;
+	VmaAllocation allocation = nullptr;
+	VmaAllocator allocator   = nullptr;
+};
+
 export class HelloTriangleApplication {
 public:
 	void run() {
@@ -89,6 +96,8 @@ private:
 	std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
 	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::raii::Fence> inFlightFences;
+
+	VmaAllocator allocator                          = nullptr;
 
 	vk::raii::Buffer vertexBuffer                   = nullptr;
 	vk::raii::DeviceMemory vertexBufferMemory       = nullptr;

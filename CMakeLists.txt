@@ -19,7 +19,7 @@ file(GLOB_RECURSE MODULE_SOURCES "include/*.cppm")
 
 find_program(SLANGC_EXECUTABLE
     NAMES slangc
-    PATHS 
+    PATHS
         /usr/local/bin
         /opt/slang/bin
         /usr/bin
@@ -75,7 +75,32 @@ target_sources(VulkanCppModule
         FILES
         "${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm"
 )
-#
+
+
+# Download CPM
+file(
+  DOWNLOAD
+  https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.42.0/CPM.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
+  EXPECTED_HASH SHA256=2020b4fc42dba44817983e06342e682ecfc3d2f484a581f11cc5731fbe4dce8a
+)
+include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
+CPMAddPackage(
+    NAME VulkanMemoryAllocator
+    GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+    GIT_TAG v3.3.0
+    DOWNLOAD_ONLY YES
+)
+if(VulkanMemoryAllocator_ADDED)
+        add_library(VulkanMemoryAllocator INTERFACE)
+        target_include_directories(VulkanMemoryAllocator INTERFACE ${VulkanMemoryAllocator_SOURCE_DIR}/include)
+        target_compile_definitions(VulkanMemoryAllocator INTERFACE
+                VMA_STATIC_VULKAN_FUNCTIONS=0
+                VMA_DYNAMIC_VULKAN_FUNCTIONS=1
+        )
+        target_link_libraries(VulkanMemoryAllocator INTERFACE Vulkan::Vulkan)
+endif()
+
 add_library(TriangleAppModule)
 add_library(TriangleApp::module ALIAS TriangleAppModule)
 set_target_properties(TriangleAppModule PROPERTIES CXX_STANDARD 23)
@@ -87,6 +112,7 @@ target_sources(TriangleAppModule
   FILES
   ${MODULE_SOURCES}
 )
+target_link_libraries(TriangleAppModule PUBLIC VulkanMemoryAllocator)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
@@ -95,7 +121,13 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   ${GLFW3_INCLUDE_DIRS}
 )
 
-target_link_libraries(${PROJECT_NAME} TriangleApp::module Vulkan::cppm ${GLFW3_LIBRARIES} glm::glm)
+target_link_libraries(${PROJECT_NAME}
+        TriangleApp::module
+        Vulkan::cppm
+        ${GLFW3_LIBRARIES}
+        glm::glm
+        VulkanMemoryAllocator
+)
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${GLFW3_CFLAGS_OTHER})
 add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_shaders)
