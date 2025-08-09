@@ -104,6 +104,8 @@ private:
 	std::vector<vk::raii::Fence> inFlightFences;
 
 
+	vk::raii::Buffer geometryBuffer                 = nullptr;
+	vk::raii::Buffer geometryBufferMemory           = nullptr;
 	vk::raii::Buffer vertexBuffer                   = nullptr;
 	vk::raii::DeviceMemory vertexBufferMemory       = nullptr;
 	vk::raii::Buffer indexBuffer                    = nullptr;
