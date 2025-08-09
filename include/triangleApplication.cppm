@@ -1,15 +1,17 @@
 module;
 // #define VMA_IMPLEMENTATION
 // #define VMA_VULKAN_VERSION 1003000
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_raii.hpp>
+#include <glm/glm.hpp>
+#include <vk_mem_alloc.h>
+
 #include <cstdint>
 #include <vector>
 #include <fstream>
 #include <memory>
-#include <vulkan/vulkan_raii.hpp>
-#include <glm/glm.hpp>
-#include <vk_mem_alloc.h>
 
 export module triangleApplication;
 
@@ -41,27 +43,23 @@ struct Vertex {
 	static vk::VertexInputBindingDescription getBindingDescription();
 	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions();
 };
+// alignment spec: https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-layout
 struct UniformBufferObject {
-	glm::mat4 mode;
-	glm::mat4 view;
-	glm::mat4 proj;
+	alignas(16) glm::mat4 model;
+	alignas(16) glm::mat4 view;
+	alignas(16) glm::mat4 proj;
 };
 
 // shader data
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{0.5f, -0.5f},  {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f},   {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f},  {1.0f, 1.0f, 1.0f}}
 };
 const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
-// export const std::vector<Vertex> vertices = {
-//     {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-//     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-//     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-// };
 // export const std::vector<Vertex> vertices = {
 //     {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
 //     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -78,31 +76,34 @@ public:
 	}
 
 private:
-	GLFWwindow* window                              = nullptr;
+	GLFWwindow* window                                = nullptr;
 	vk::raii::Context context;
 
-	vk::raii::Instance instance                     = nullptr;
-	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-	vk::raii::PhysicalDevice physicalDevice         = nullptr;
-	vk::raii::Device device                         = nullptr;
-	uint32_t graphicsIndex                          = ~0;
-	uint32_t currentFrame                           = 0;
-	uint32_t semaphoreIndex                         = 0;
-	bool frameBufferResized                         = false;
-	vk::raii::Queue graphicsQueue                   = nullptr;
-	vk::raii::Queue presentQueue                    = nullptr;
-	vk::raii::SurfaceKHR surface                    = nullptr;
+	vk::raii::Instance instance                       = nullptr;
+	vk::raii::DebugUtilsMessengerEXT debugMessenger   = nullptr;
+	vk::raii::PhysicalDevice physicalDevice           = nullptr;
+	vk::raii::Device device                           = nullptr;
+	uint32_t graphicsIndex                            = ~0;
+	uint32_t currentFrame                             = 0;
+	uint32_t semaphoreIndex                           = 0;
+	bool frameBufferResized                           = false;
+	vk::raii::Queue graphicsQueue                     = nullptr;
+	vk::raii::Queue presentQueue                      = nullptr;
+	vk::raii::SurfaceKHR surface                      = nullptr;
 
-	vk::raii::SwapchainKHR swapChain                = nullptr;
+	vk::raii::SwapchainKHR swapChain                  = nullptr;
 	std::vector<vk::Image> swapChainImages;
-	vk::Format swapChainImageFormat                 = vk::Format::eUndefined;
-	vk::Extent2D swapChainExtent                    = vk::Extent2D::NativeType();
+	vk::Format swapChainImageFormat                   = vk::Format::eUndefined;
+	vk::Extent2D swapChainExtent                      = vk::Extent2D::NativeType();
 	std::vector<vk::raii::ImageView> swapChainImageViews;
 
-	vk::raii::PipelineLayout pipelineLayout         = nullptr;
-	vk::raii::Pipeline graphicsPipeline             = nullptr;
+	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+	vk::raii::PipelineLayout pipelineLayout           = nullptr;
+	vk::raii::Pipeline graphicsPipeline               = nullptr;
 
-	vk::raii::CommandPool commandPool               = nullptr;
+	vk::raii::DescriptorPool descriptorPool           = nullptr;
+	std::vector<vk::raii::DescriptorSet> descriptorSets;
+	vk::raii::CommandPool commandPool                 = nullptr;
 	std::vector<vk::raii::CommandBuffer> commandBuffers;
 
 	std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
@@ -110,10 +111,13 @@ private:
 	std::vector<vk::raii::Fence> inFlightFences;
 
 
-	vk::raii::Buffer vertexBuffer                   = nullptr;
-	vk::raii::DeviceMemory vertexBufferMemory       = nullptr;
-	vk::raii::Buffer indexBuffer                    = nullptr;
-	vk::raii::DeviceMemory indexBufferMemory        = nullptr;
+	std::vector<vk::raii::Buffer> uniformBuffers;
+	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+	std::vector<void*> uniformBuffersMapped;
+	vk::raii::Buffer vertexBuffer                     = nullptr;
+	vk::raii::DeviceMemory vertexBufferMemory         = nullptr;
+	vk::raii::Buffer indexBuffer                      = nullptr;
+	vk::raii::DeviceMemory indexBufferMemory          = nullptr;
 
 	void drawFrame();
 
@@ -133,6 +137,9 @@ private:
 	void createCommandPool();
 	void createVertexBuffer();
 	void createIndexBuffer();
+	void createUniformBuffers();
+	void createDescriptorPool();
+	void createDescriptorSets();
 	void createBuffer(
 		vk::DeviceSize size,
 		vk::BufferUsageFlags usage,
@@ -153,6 +160,7 @@ private:
 		vk::PipelineStageFlags2 dstStageMask
 	);
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+	void updateUniformBuffers(uint32_t currentImage);
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
