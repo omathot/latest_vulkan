@@ -22,6 +22,7 @@ void HelloTriangleApplication::initVulkan() {
 	createLogicalDevice();
 	createSwapChain();
 	createImageViews();
+	createDescriptorSetLayout();
 	createGraphicsPipeline();
 	createCommandPool();
 	createVertexBuffer();
@@ -190,6 +191,16 @@ void HelloTriangleApplication::createImageViews() {
 		imageViewCreateInfo.image = image;
 		swapChainImageViews.emplace_back(device, imageViewCreateInfo);
 	}
+}
+
+void HelloTriangleApplication::createDescriptorSetLayout() {
+	vk::DescriptorSetLayoutBinding uboLayoutBinding = {
+		.binding = 0,
+		.descriptorType = vk::DescriptorType::eUniformBuffer,
+		.descriptorCount = 1,
+		.stageFlags = vk::ShaderStageFlagBits::eVertex,
+		.pImmutableSamplers = nullptr,
+	};
 }
 
 void HelloTriangleApplication::createGraphicsPipeline() {

@@ -34,7 +34,6 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-// shader data
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
@@ -42,6 +41,13 @@ struct Vertex {
 	static vk::VertexInputBindingDescription getBindingDescription();
 	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions();
 };
+struct UniformBufferObject {
+	glm::mat4 mode;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
+// shader data
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -122,6 +128,7 @@ private:
 	void cleanupSwapChain();
 	void recreateSwapChain();
 	void createImageViews();
+	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createCommandPool();
 	void createVertexBuffer();
