@@ -24,6 +24,7 @@ void HelloTriangleApplication::initVulkan() {
 	createImageViews();
 	createGraphicsPipeline();
 	createCommandPool();
+	createVertexBuffer();
 	createCommandBuffer();
 	createSyncObjects();
 }
@@ -33,9 +34,6 @@ void HelloTriangleApplication::initWindow() {
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-	// trying to fix wayland transparent windows when no surface
-	glfwWindowHint(GLFW_ALPHA_BITS, 0);
-	glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);
 
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
@@ -206,7 +204,14 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 	};
 	vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+	auto bindingDescription = Vertex::getBindingDescription();
+	auto attributeDescriptions = Vertex::getAttributeDescriptions();
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = {
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &bindingDescription,
+		.vertexAttributeDescriptionCount = attributeDescriptions.size(),
+		.pVertexAttributeDescriptions = attributeDescriptions.data(),
+	};
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly {.topology = vk::PrimitiveTopology::eTriangleList};
 	std::vector dynamicStates = {
 		vk::DynamicState::eViewport,
@@ -287,6 +292,25 @@ void HelloTriangleApplication::createCommandPool() {
 	commandPool = vk::raii::CommandPool(device, poolInfo);
 }
 
+void HelloTriangleApplication::createVertexBuffer() {
+	vk::BufferCreateInfo bufferInfo{
+		.size = sizeof(vertices[0]) * vertices.size(),
+		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
+		.sharingMode = vk::SharingMode::eExclusive,
+	};
+	vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+	vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+	vk::MemoryAllocateInfo memoryAllocateInfo = {
+		.allocationSize = memRequirements.size,
+		.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent),
+	};
+	vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
+	vertexBuffer.bindMemory(vertexBufferMemory, 0);
+	void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+	memcpy(data, vertices.data(), bufferInfo.size);
+	vertexBufferMemory.unmapMemory();
+}
+
 void HelloTriangleApplication::createCommandBuffer() {
 	commandBuffers.clear();
 	vk::CommandBufferAllocateInfo allocInfo{
@@ -328,6 +352,8 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 	// set dynamic states
 	commandBuffers[currentFrame].setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 	commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+
+	commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
 	commandBuffers[currentFrame].draw(3, 1, 0, 0);
 	commandBuffers[currentFrame].endRendering();
 	transitionImageLayout(
@@ -544,6 +570,16 @@ std::vector<const char *> HelloTriangleApplication::getRequiredExtensions() {
 	return extensions;
 }
 
+uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+	vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+	throw std::runtime_error("Failed to find suitable memory type!");
+}
+
 void HelloTriangleApplication::mainLoop() {
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -633,4 +669,17 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL HelloTriangleApplication::debugCallback(vk::Deb
 {
 	std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
 	return vk::False;
+}
+
+
+// shader
+vk::VertexInputBindingDescription Vertex::getBindingDescription() {
+	return {.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex};
+}
+
+std::array<vk::VertexInputAttributeDescription, 2> Vertex::getAttributeDescriptions() {
+	return {
+		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)),
+		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
+	};
 }

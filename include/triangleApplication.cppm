@@ -5,6 +5,7 @@ module;
 #include <fstream>
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
+#include <glm/glm.hpp>
 
 export module triangleApplication;
 
@@ -28,6 +29,25 @@ constexpr bool enableValidationLayers = false;
 #else
 constexpr bool enableValidationLayers = true;
 #endif
+
+// shader data
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static vk::VertexInputBindingDescription getBindingDescription();
+	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions();
+};
+export const std::vector<Vertex> vertices = {
+    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+// export const std::vector<Vertex> vertices = {
+//     {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+//     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+//     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+// };
 
 export class HelloTriangleApplication {
 public:
@@ -70,6 +90,9 @@ private:
 	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::raii::Fence> inFlightFences;
 
+	vk::raii::Buffer vertexBuffer                   = nullptr;
+	vk::raii::DeviceMemory vertexBufferMemory       = nullptr;
+
 	void drawFrame();
 
 	void initVulkan();
@@ -83,6 +106,7 @@ private:
 	void createImageViews();
 	void createGraphicsPipeline();
 	void createCommandPool();
+	void createVertexBuffer();
 	void createCommandBuffer();
 	void createSyncObjects();
 	void recordCommandBuffer(uint32_t imageIndex);
@@ -103,6 +127,7 @@ private:
 	void createLogicalDevice();
 	uint32_t findQueueFamilies(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
+	uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 	void mainLoop();
 	void cleanup();
 
