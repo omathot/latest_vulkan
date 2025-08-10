@@ -119,6 +119,9 @@ private:
 	vk::raii::Buffer indexBuffer                      = nullptr;
 	vk::raii::DeviceMemory indexBufferMemory          = nullptr;
 
+	vk::raii::Image textureImage                      = nullptr;
+	vk::raii::DeviceMemory textureImageMemory         = nullptr;
+
 	void drawFrame();
 
 	void initWindow();
@@ -135,6 +138,17 @@ private:
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createCommandPool();
+	void createTextureImage();
+	void createImage(
+		uint32_t width,
+		uint32_t height,
+		vk::Format format,
+		vk::ImageTiling tiling,
+		vk::ImageUsageFlags usage,
+		vk::MemoryPropertyFlags properties,
+		vk::raii::Image& image,
+		vk::raii::DeviceMemory& imageMemory
+	);
 	void createVertexBuffer();
 	void createIndexBuffer();
 	void createUniformBuffers();
@@ -150,7 +164,7 @@ private:
 	void createCommandBuffer();
 	void createSyncObjects();
 	void recordCommandBuffer(uint32_t imageIndex);
-	void transitionImageLayout(
+	void transition_image_layout(
 		uint32_t imageIndex,
 		vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout,
@@ -159,8 +173,11 @@ private:
 		vk::PipelineStageFlags2 srcStageMask,
 		vk::PipelineStageFlags2 dstStageMask
 	);
+	void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
 	void updateUniformBuffers(uint32_t currentImage);
+	vk::raii::CommandBuffer beginSingleTimeCommands();
+	void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	static vk::Format chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 	vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
@@ -175,8 +192,10 @@ private:
 	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
 	static std::vector<char> readFile(const std::string& filename);
 
-	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-	                                                      vk::DebugUtilsMessageTypeFlagsEXT type,
-	                                                      const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-	                                                      void*);
+	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
+		vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
+		vk::DebugUtilsMessageTypeFlagsEXT type,
+		const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+		void*
+	);
 };
