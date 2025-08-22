@@ -175,6 +175,7 @@ private:
 	);
 	void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+	void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
 	void updateUniformBuffers(uint32_t currentImage);
 	vk::raii::CommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);

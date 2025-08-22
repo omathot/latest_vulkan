@@ -108,7 +108,7 @@ target_sources(TriangleAppModule
   PUBLIC
   FILE_SET cxx_modules TYPE CXX_MODULES
   BASE_DIRS
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/"
   FILES
   ${MODULE_SOURCES}
 )

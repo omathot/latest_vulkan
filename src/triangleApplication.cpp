@@ -33,6 +33,7 @@ void HelloTriangleApplication::initVulkan() {
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
 	createCommandPool();
+	createTextureImage();
 	createVertexBuffer();
 	createIndexBuffer();
 	createUniformBuffers();
@@ -63,10 +64,10 @@ void HelloTriangleApplication::createInstance() {
 	// app Information
 	constexpr vk::ApplicationInfo appInfo{
 			.pApplicationName	  = "Hello Triangle",
-			.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+			.applicationVersion   = VK_MAKE_VERSION(1, 0, 0),
 			.pEngineName	      = "No Engine",
-			.engineVersion	    = VK_MAKE_VERSION(1, 0, 0),
-			.apiVersion	        = vk::ApiVersion14
+			.engineVersion	      = VK_MAKE_VERSION(1, 0, 0),
+			.apiVersion	          = vk::ApiVersion14
 	};
 
 	// get required layers
@@ -342,9 +343,12 @@ void HelloTriangleApplication::createTextureImage() {
 	stagingBufferMemory.unmapMemory();
 
 	stbi_image_free(pixels);
-	vk::raii::Image textureImageTemp = nullptr;
+	vk::raii::Image textureImage = nullptr;
 	vk::raii::DeviceMemory textureImageMemoryTemp = nullptr;
-	createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp);
+	createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage, textureImageMemoryTemp);
+	transitionImageLayout(textureImage, vk::ImageLayout::eUndefined, ::vk::ImageLayout::eTransferDstOptimal);
+	copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+	transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
 void HelloTriangleApplication::transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
@@ -355,7 +359,26 @@ void HelloTriangleApplication::transitionImageLayout(const vk::raii::Image& imag
 		.image = image,
 		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
 	};
-	// commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlags dstStageMask, vk::DependencyFlags dependencyFlags, const vk::ArrayProxy<const vk::MemoryBarrier> &memoryBarriers, const vk::ArrayProxy<const vk::BufferMemoryBarrier> &bufferMemoryBarriers, const vk::ArrayProxy<const vk::ImageMemoryBarrier> &imageMemoryBarriers)
+	vk::PipelineStageFlags srcStage;
+	vk::PipelineStageFlags dstStage;
+	if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+		barrier.srcAccessMask = {};
+		barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+		srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+		dstStage = vk::PipelineStageFlagBits::eTransfer;
+	}
+	else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+		barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+		barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+		srcStage = vk::PipelineStageFlagBits::eTransfer;
+		dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+	}
+	else {
+		throw std::runtime_error("Unsupported layout transition!");
+	}
+	commandBuffer.pipelineBarrier(srcStage, dstStage, {}, {}, nullptr, barrier);
 
 	endSingleTimeCommands(commandBuffer);
 }
@@ -503,6 +526,22 @@ void HelloTriangleApplication::copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii:
 	vk::raii::CommandBuffer commandCopyBuffer = beginSingleTimeCommands();
 	commandCopyBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy(0, 0, size));
 	endSingleTimeCommands(commandCopyBuffer);
+}
+
+void HelloTriangleApplication::copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height) {
+	vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+
+	vk::BufferImageCopy region = {
+		.bufferOffset = 0,
+		.bufferRowLength = 0,
+		.bufferImageHeight = 0,
+		.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+		.imageOffset = {0, 0, 0},
+		.imageExtent = {width, height, 1}
+	};
+	commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+
+	endSingleTimeCommands(commandBuffer);
 }
 
 void HelloTriangleApplication::updateUniformBuffers(uint32_t currentImage) {
