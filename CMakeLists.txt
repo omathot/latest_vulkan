@@ -93,7 +93,7 @@ CPMAddPackage(
 )
 if(VulkanMemoryAllocator_ADDED)
         add_library(VulkanMemoryAllocator INTERFACE)
-        target_include_directories(VulkanMemoryAllocator INTERFACE ${VulkanMemoryAllocator_SOURCE_DIR}/include)
+        target_include_directories(VulkanMemoryAllocator SYSTEM INTERFACE ${VulkanMemoryAllocator_SOURCE_DIR}/include)
         target_compile_definitions(VulkanMemoryAllocator INTERFACE
                 VMA_STATIC_VULKAN_FUNCTIONS=0
                 VMA_DYNAMIC_VULKAN_FUNCTIONS=1

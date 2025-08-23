@@ -10,6 +10,7 @@ module;
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <vk_mem_alloc.h>
 
 #include <print>
 #include <vector>
@@ -24,10 +25,10 @@ module triangleApplication;
 
 void HelloTriangleApplication::initVulkan() {
 	createInstance();
-	setupDebugMessenger();
 	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
+	initVMA();
 	createSwapChain();
 	createImageViews();
 	createDescriptorSetLayout();
@@ -52,6 +53,21 @@ void HelloTriangleApplication::initWindow() {
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
 	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+}
+
+void HelloTriangleApplication::initVMA() {
+	VmaVulkanFunctions vkFuncs {
+		.vkGetInstanceProcAddr = &vkGetInstanceProcAddr,
+		.vkGetDeviceProcAddr = &vkGetDeviceProcAddr,
+	};
+	VmaAllocatorCreateInfo createInfo {
+		.physicalDevice = *physicalDevice,
+		.device = *device,
+		.pVulkanFunctions = &vkFuncs,
+		.instance = *instance,
+		.vulkanApiVersion = VK_API_VERSION_1_4,
+	};
+	vmaCreateAllocator(&createInfo, &allocator);
 }
 
 void HelloTriangleApplication::createInstance() {
@@ -840,6 +856,7 @@ void HelloTriangleApplication::mainLoop() {
 }
 void HelloTriangleApplication::cleanup() {
 	cleanupSwapChain();
+	vmaDestroyAllocator(allocator);
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

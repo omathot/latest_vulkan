@@ -1,8 +1,9 @@
 module;
-// #define VMA_IMPLEMENTATION
-// #define VMA_VULKAN_VERSION 1003000
+#define VMA_IMPLEMENTATION
+#define VMA_VULKAN_VERSION 1004000
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 
+#include <vulkan/vulkan_core.h>
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
@@ -79,10 +80,13 @@ private:
 	GLFWwindow* window                                = nullptr;
 	vk::raii::Context context;
 
-	vk::raii::Instance instance                       = nullptr;
+	// VkInstance instance = nullptr;
+	vk::raii::Instance instance                      = nullptr;
+	// VkDebugUtilsMessengerEXT debugMesseger = nullptr;
 	vk::raii::DebugUtilsMessengerEXT debugMessenger   = nullptr;
 	vk::raii::PhysicalDevice physicalDevice           = nullptr;
 	vk::raii::Device device                           = nullptr;
+	VmaAllocator allocator                            = nullptr;
 	uint32_t graphicsIndex                            = ~0;
 	uint32_t currentFrame                             = 0;
 	uint32_t semaphoreIndex                           = 0;
@@ -110,7 +114,6 @@ private:
 	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::raii::Fence> inFlightFences;
 
-
 	std::vector<vk::raii::Buffer> uniformBuffers;
 	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
 	std::vector<void*> uniformBuffersMapped;
@@ -130,6 +133,7 @@ private:
 	void setupDebugMessenger();
 	void pickPhysicalDevice();
 	void createLogicalDevice();
+	void initVMA();
 	void createSurface();
 	void createSwapChain();
 	void cleanupSwapChain();
