@@ -3,6 +3,7 @@ module;
 #define STB_IMAGE_IMPLEMENTATION
 // #define VULKAN_HPP_NO_EXCEPTIONS
 
+#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
@@ -13,6 +14,7 @@ module;
 #include <vk_mem_alloc.h>
 
 #include <print>
+#include <fstream>
 #include <vector>
 #include <iostream>
 #include <algorithm>
@@ -20,8 +22,15 @@ module;
 #include <stdexcept>
 #include <chrono>
 #include <stb_image.h>
+#include <GLFW/glfw3.h>
 
 module triangleApplication;
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, true);
+}
 
 void HelloTriangleApplication::initVulkan() {
 	createInstance();
@@ -35,6 +44,8 @@ void HelloTriangleApplication::initVulkan() {
 	createGraphicsPipeline();
 	createCommandPool();
 	createTextureImage();
+	createTextureImageView();
+	createTextureSampler();
 	createVertexBuffer();
 	createIndexBuffer();
 	createUniformBuffers();
@@ -53,6 +64,7 @@ void HelloTriangleApplication::initWindow() {
 	window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	glfwSetWindowUserPointer(window, this);
 	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+	glfwSetKeyCallback(window, key_callback);
 }
 
 void HelloTriangleApplication::initVMA() {
@@ -184,7 +196,10 @@ void HelloTriangleApplication::createSwapChain() {
 		.oldSwapchain = nullptr
 	};
 	swapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
-	swapChainImages = swapChain.getImages();
+	std::vector<vk::Image> tempImages = swapChain.getImages();
+	for (uint32_t i = 0; i < tempImages.size(); i++) {
+		swapChainImages.emplace_back(VMAImage{.image = tempImages[i], .allocation = nullptr});
+	}
 }
 
 void HelloTriangleApplication::recreateSwapChain() {
@@ -208,17 +223,19 @@ void HelloTriangleApplication::cleanupSwapChain() {
 
 void HelloTriangleApplication::createImageViews() {
 	swapChainImageViews.clear();
+	for (uint32_t i = 0; i < swapChainImages.size(); i++) {
+		swapChainImageViews.emplace_back(createImageView(swapChainImages[i], swapChainImageFormat));
+	}
+}
 
-	vk::ImageViewCreateInfo imageViewCreateInfo{
+vk::raii::ImageView HelloTriangleApplication::createImageView(VMAImage& image, vk::Format format) {
+	vk::ImageViewCreateInfo viewInfo {
+		.image = image.image,
 		.viewType = vk::ImageViewType::e2D,
-		.format = swapChainImageFormat,
+		.format = format,
 		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
 	};
-
-	for (auto image: swapChainImages) {
-		imageViewCreateInfo.image = image;
-		swapChainImageViews.emplace_back(device, imageViewCreateInfo);
-	}
+	return vk::raii::ImageView(device, viewInfo);
 }
 
 void HelloTriangleApplication::createDescriptorSetLayout() {
@@ -345,34 +362,60 @@ void HelloTriangleApplication::createCommandPool() {
 void HelloTriangleApplication::createTextureImage() {
 	int texWidth, texHeight, texChannels;
 	stbi_uc* pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	if (!pixels) {
+	if (!pixels)
 		throw std::runtime_error("Failed to load texture image!");
-	}
 
 	vk::DeviceSize imageSize = texWidth * texHeight * 4;
-	vk::raii::Buffer stagingBuffer = nullptr;
-	vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+	VMABuffer stagingBuffer;
+	createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
 
-	void* data = stagingBufferMemory.mapMemory(0, imageSize);
-	memcpy(data, pixels, imageSize);
-	stagingBufferMemory.unmapMemory();
+	void* dataStaging;
+	vmaMapMemory(allocator, stagingBuffer.allocation, &dataStaging);
+	memcpy(dataStaging, pixels, imageSize);
+	vmaUnmapMemory(allocator, stagingBuffer.allocation);
 
 	stbi_image_free(pixels);
-	vk::raii::Image textureImage = nullptr;
-	vk::raii::DeviceMemory textureImageMemoryTemp = nullptr;
-	createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage, textureImageMemoryTemp);
+	createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage);
 	transitionImageLayout(textureImage, vk::ImageLayout::eUndefined, ::vk::ImageLayout::eTransferDstOptimal);
 	copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 	transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	std::println("Destroying staging buffer");
+	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 }
 
-void HelloTriangleApplication::transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
+void HelloTriangleApplication::createTextureImageView() {
+	textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb);
+}
+
+void HelloTriangleApplication::createTextureSampler() {
+	vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
+	// does not reference a specific img anywhere
+	// is a distinct object used to extract colors from a texture.
+	// can be applied to any image
+	vk::SamplerCreateInfo samplerInfo {
+		.magFilter = vk::Filter::eLinear,
+		.minFilter = vk::Filter::eLinear,
+		.mipmapMode = vk::SamplerMipmapMode::eLinear,
+		.addressModeU  = vk::SamplerAddressMode::eRepeat,
+		.addressModeV  = vk::SamplerAddressMode::eRepeat,
+		.addressModeW  = vk::SamplerAddressMode::eRepeat,
+		.mipLodBias = 0.0f,
+		.anisotropyEnable = vk::True,
+		.maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+		.compareEnable = vk::False,
+		.compareOp = vk::CompareOp::eAlways,
+		.borderColor = vk::BorderColor::eIntOpaqueBlack,
+		.unnormalizedCoordinates = vk::False
+	};
+	textureSampler = vk::raii::Sampler(device, samplerInfo);
+}
+
+void HelloTriangleApplication::transitionImageLayout(const VMAImage& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
 	auto commandBuffer = beginSingleTimeCommands();
 	vk::ImageMemoryBarrier barrier = {
 		.oldLayout = oldLayout,
 		.newLayout = newLayout,
-		.image = image,
+		.image = image.image,
 		.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
 	};
 	vk::PipelineStageFlags srcStage;
@@ -406,8 +449,7 @@ void HelloTriangleApplication::createImage(
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
 	vk::MemoryPropertyFlags properties,
-	vk::raii::Image& image,
-	vk::raii::DeviceMemory& imageMemory
+	VMAImage& image
 ) {
 	vk::ImageCreateInfo imageInfo = {
 		.flags = {},
@@ -421,59 +463,68 @@ void HelloTriangleApplication::createImage(
 		.usage = usage,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
+	VmaAllocationCreateInfo allocInfo{};
+	if (properties & vk::MemoryPropertyFlagBits::eDeviceLocal)
+		allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	else {
+		allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+		allocInfo.requiredFlags = static_cast<VkMemoryPropertyFlags>(properties);
+	}
+	vmaCreateImage(allocator, imageInfo, &allocInfo, &image.image, &image.allocation, nullptr);
 
-	image = vk::raii::Image(device, imageInfo);
+	// image = vk::raii::Image(device, imageInfo);
 
-	vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
-	vk::MemoryAllocateInfo allocInfo(memRequirements.size, findMemoryType(memRequirements.memoryTypeBits, properties));
-	imageMemory = vk::raii::DeviceMemory(device, allocInfo);
-	image.bindMemory(imageMemory, 0);
+	// vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
+	// vk::MemoryAllocateInfo allocInfo(memRequirements.size, findMemoryType(memRequirements.memoryTypeBits, properties));
+	// imageMemory = vk::raii::DeviceMemory(device, allocInfo);
+	// image.bindMemory(imageMemory, 0);
 }
 
 void HelloTriangleApplication::createVertexBuffer() {
 	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
 	// only use "host" visible buffer as temporary buffer (staging) - perf boost
-	vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-	vk::raii::Buffer stagingBuffer = nullptr;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+	VMABuffer stagingBuffer;
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
 
-	void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+	void *dataStaging;
+	vmaMapMemory(allocator, stagingBuffer.allocation, &dataStaging);
 	memcpy(dataStaging, vertices.data(), bufferSize);
-	stagingBufferMemory.unmapMemory();
+	vmaUnmapMemory(allocator, stagingBuffer.allocation);
 
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory);
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer);
 	copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 }
 
 void HelloTriangleApplication::createIndexBuffer() {
 	vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-	vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-	vk::raii::Buffer stagingBuffer = nullptr;
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+	VMABuffer stagingBuffer;
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer);
 
-	void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+	void *dataStaging;
+	vmaMapMemory(allocator, stagingBuffer.allocation, &dataStaging);
 	memcpy(dataStaging, indices.data(), bufferSize);
-	stagingBufferMemory.unmapMemory();
+	vmaUnmapMemory(allocator, stagingBuffer.allocation);
 
-	createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer, indexBufferMemory);
+	createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer);
 	copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+	vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation);
 }
 
 void HelloTriangleApplication::createUniformBuffers() {
 	uniformBuffers.clear();
-	uniformBuffersMemory.clear();
 	uniformBuffersMapped.clear();
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-		vk::raii::Buffer buffer = nullptr;
-		vk::raii::DeviceMemory bufferMemory = nullptr;
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer, bufferMemory);
+		VMABuffer buffer;
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer);
+		void* mapped;
+		vmaMapMemory(allocator, buffer.allocation, &mapped);
 		uniformBuffers.emplace_back(std::move(buffer));
-		uniformBuffersMemory.emplace_back(std::move(bufferMemory));
-		uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
+		uniformBuffersMapped.emplace_back(mapped);
 	}
 }
 
@@ -500,7 +551,7 @@ void HelloTriangleApplication::createDescriptorSets() {
 	descriptorSets = device.allocateDescriptorSets(allocInfo);
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 		vk::DescriptorBufferInfo bufferInfo = {
-			.buffer = uniformBuffers[i],
+			.buffer = uniformBuffers[i].buffer,
 			.offset = 0,
 			.range = sizeof(UniformBufferObject)
 		};
@@ -520,31 +571,30 @@ void HelloTriangleApplication::createBuffer(
 	vk::DeviceSize size,
 	vk::BufferUsageFlags usage,
 	vk::MemoryPropertyFlags properties,
-	vk::raii::Buffer& buffer,
-	vk::raii::DeviceMemory& bufferMemory
+	VMABuffer& buffer
 ) {
 	vk::BufferCreateInfo bufferInfo{
 		.size = size,
 		.usage = usage,
 		.sharingMode = vk::SharingMode::eExclusive,
 	};
-	buffer = vk::raii::Buffer(device, bufferInfo);
-	vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-	vk::MemoryAllocateInfo memoryAllocateInfo = {
-		.allocationSize = memRequirements.size,
-		.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties),
-	};
-	bufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
-	buffer.bindMemory(bufferMemory, 0);
+	VmaAllocationCreateInfo allocInfo {.requiredFlags = static_cast<VkMemoryPropertyFlags>(properties)};
+	// inform VMA how to treat this
+	if (properties & vk::MemoryPropertyFlagBits::eHostVisible)
+		allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+	else
+		allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+	vmaCreateBuffer(allocator, bufferInfo, &allocInfo, &buffer.buffer, &buffer.allocation, nullptr);
 }
 
-void HelloTriangleApplication::copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size) {
+void HelloTriangleApplication::copyBuffer(VMABuffer& srcBuffer, VMABuffer& dstBuffer, vk::DeviceSize size) {
 	vk::raii::CommandBuffer commandCopyBuffer = beginSingleTimeCommands();
-	commandCopyBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy(0, 0, size));
+	commandCopyBuffer.copyBuffer(srcBuffer.buffer, dstBuffer.buffer, vk::BufferCopy(0, 0, size));
 	endSingleTimeCommands(commandCopyBuffer);
 }
 
-void HelloTriangleApplication::copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height) {
+void HelloTriangleApplication::copyBufferToImage(const VMABuffer& buffer, VMAImage& image, uint32_t width, uint32_t height) {
 	vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
 
 	vk::BufferImageCopy region = {
@@ -555,7 +605,7 @@ void HelloTriangleApplication::copyBufferToImage(const vk::raii::Buffer& buffer,
 		.imageOffset = {0, 0, 0},
 		.imageExtent = {width, height, 1}
 	};
-	commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+	commandBuffer.copyBufferToImage(buffer.buffer, image.image, vk::ImageLayout::eTransferDstOptimal, {region});
 
 	endSingleTimeCommands(commandBuffer);
 }
@@ -604,8 +654,8 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 	};
 	commandBuffers[currentFrame].beginRendering(renderingInfo);
 	commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-	commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
-	commandBuffers[currentFrame].bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
+	commandBuffers[currentFrame].bindVertexBuffers(0, vk::Buffer(vertexBuffer.buffer), {0});
+	commandBuffers[currentFrame].bindIndexBuffer(vk::Buffer(indexBuffer), 0, vk::IndexType::eUint16);
 	commandBuffers[currentFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[currentFrame], nullptr);
 
 	// set dynamic states
@@ -637,7 +687,7 @@ void HelloTriangleApplication::transition_image_layout(
 		.newLayout = newLayout,
 		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image = swapChainImages[imageIndex],
+		.image = swapChainImages[imageIndex].image,
 		.subresourceRange = {
 			.aspectMask = vk::ImageAspectFlagBits::eColor,
 			.baseMipLevel = 0,
@@ -716,6 +766,9 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 				found = found && extensionIter != extensions.end();
 			}
 			isSuitable = isSuitable && found;
+
+			auto supportedFeatures = device.getFeatures();
+			isSuitable = isSuitable && supportedFeatures.samplerAnisotropy;
 			std::println("");
 			if (isSuitable)
 				physicalDevice = device;
@@ -781,7 +834,7 @@ void HelloTriangleApplication::createLogicalDevice() {
 
 	// query Vulkan 1.3 features
 	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-		{},                                                     // vk::PhysicalDeviceFeatures2
+		{.features = {.samplerAnisotropy= true}},                                                     // vk::PhysicalDeviceFeatures2
 		{.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
 		{.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
 	};
@@ -856,6 +909,15 @@ void HelloTriangleApplication::mainLoop() {
 }
 void HelloTriangleApplication::cleanup() {
 	cleanupSwapChain();
+	// VMA cleanup
+	for (size_t i = 0; i < uniformBuffers.size(); i++)
+	{
+		vmaUnmapMemory(allocator, uniformBuffers[i].allocation);
+		vmaDestroyBuffer(allocator, uniformBuffers[i].buffer, uniformBuffers[i].allocation);
+	}
+	vmaDestroyBuffer(allocator, vertexBuffer.buffer, vertexBuffer.allocation);
+	vmaDestroyBuffer(allocator, indexBuffer.buffer, indexBuffer.allocation);
+	vmaDestroyImage(allocator, textureImage.image, textureImage.allocation);
 	vmaDestroyAllocator(allocator);
 
 	glfwDestroyWindow(window);

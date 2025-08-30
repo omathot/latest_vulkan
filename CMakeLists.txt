@@ -97,6 +97,8 @@ if(VulkanMemoryAllocator_ADDED)
         target_compile_definitions(VulkanMemoryAllocator INTERFACE
                 VMA_STATIC_VULKAN_FUNCTIONS=0
                 VMA_DYNAMIC_VULKAN_FUNCTIONS=1
+                VMA_DEBUG_LOGGING
+                # VMA_STATS_STRING_ENABLED
         )
         target_link_libraries(VulkanMemoryAllocator INTERFACE Vulkan::Vulkan)
 endif()

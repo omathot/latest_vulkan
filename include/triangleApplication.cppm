@@ -2,6 +2,7 @@ module;
 #define VMA_IMPLEMENTATION
 #define VMA_VULKAN_VERSION 1004000
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define VMA_DEBUG_INITIALIZE_ALLOCTIONS 1
 
 #include <vulkan/vulkan_core.h>
 #include <GLFW/glfw3.h>
@@ -11,19 +12,18 @@ module;
 
 #include <cstdint>
 #include <vector>
-#include <fstream>
 #include <memory>
 
 export module triangleApplication;
 
-export constexpr uint32_t WIDTH  = 800;
-export constexpr uint32_t HEIGHT = 600;
-export constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+constexpr uint32_t WIDTH  = 800;
+constexpr uint32_t HEIGHT = 600;
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
-export std::vector validationLayers = {
+std::vector validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
-export std::vector<const char*> requiredDeviceExtensions = {
+std::vector<const char*> requiredDeviceExtensions = {
 	vk::KHRSwapchainExtensionName,
 	vk::KHRSpirv14ExtensionName,
 	vk::KHRSynchronization2ExtensionName,
@@ -67,6 +67,21 @@ const std::vector<uint16_t> indices = {
 //     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 // };
 
+
+
+struct VMABuffer {
+	VkBuffer buffer;
+	VmaAllocation allocation;
+
+	operator VkBuffer() const {return buffer;}
+};
+struct VMAImage {
+	VkImage image;
+	VmaAllocation allocation;
+
+	operator VkImage() const {return image;}
+};
+
 export class HelloTriangleApplication {
 public:
 	void run() {
@@ -96,7 +111,7 @@ private:
 	vk::raii::SurfaceKHR surface                      = nullptr;
 
 	vk::raii::SwapchainKHR swapChain                  = nullptr;
-	std::vector<vk::Image> swapChainImages;
+	std::vector<VMAImage> swapChainImages;
 	vk::Format swapChainImageFormat                   = vk::Format::eUndefined;
 	vk::Extent2D swapChainExtent                      = vk::Extent2D::NativeType();
 	std::vector<vk::raii::ImageView> swapChainImageViews;
@@ -114,16 +129,14 @@ private:
 	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
 	std::vector<vk::raii::Fence> inFlightFences;
 
-	std::vector<vk::raii::Buffer> uniformBuffers;
-	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+	std::vector<VMABuffer> uniformBuffers;
 	std::vector<void*> uniformBuffersMapped;
-	vk::raii::Buffer vertexBuffer                     = nullptr;
-	vk::raii::DeviceMemory vertexBufferMemory         = nullptr;
-	vk::raii::Buffer indexBuffer                      = nullptr;
-	vk::raii::DeviceMemory indexBufferMemory          = nullptr;
+	VMABuffer vertexBuffer;
+	VMABuffer indexBuffer;
 
-	vk::raii::Image textureImage                      = nullptr;
-	vk::raii::DeviceMemory textureImageMemory         = nullptr;
+	VMAImage textureImage;
+	vk::raii::ImageView textureImageView = nullptr;
+	vk::raii::Sampler textureSampler = nullptr;
 
 	void drawFrame();
 
@@ -143,6 +156,9 @@ private:
 	void createGraphicsPipeline();
 	void createCommandPool();
 	void createTextureImage();
+	void createTextureImageView();
+	void createTextureSampler();
+	vk::raii::ImageView createImageView(VMAImage& image, vk::Format format);
 	void createImage(
 		uint32_t width,
 		uint32_t height,
@@ -150,8 +166,7 @@ private:
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
 		vk::MemoryPropertyFlags properties,
-		vk::raii::Image& image,
-		vk::raii::DeviceMemory& imageMemory
+		VMAImage& image
 	);
 	void createVertexBuffer();
 	void createIndexBuffer();
@@ -162,8 +177,7 @@ private:
 		vk::DeviceSize size,
 		vk::BufferUsageFlags usage,
 		vk::MemoryPropertyFlags properties,
-		vk::raii::Buffer& buffer,
-		vk::raii::DeviceMemory& deviceMemory
+		VMABuffer& buffer
 	);
 	void createCommandBuffer();
 	void createSyncObjects();
@@ -177,9 +191,9 @@ private:
 		vk::PipelineStageFlags2 srcStageMask,
 		vk::PipelineStageFlags2 dstStageMask
 	);
-	void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
-	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
-	void copyBufferToImage(const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
+	void transitionImageLayout(const VMAImage& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+	void copyBuffer(VMABuffer& srcBuffer, VMABuffer& dstBuffer, vk::DeviceSize size);
+	void copyBufferToImage(const VMABuffer& buffer, VMAImage& image, uint32_t width, uint32_t height);
 	void updateUniformBuffers(uint32_t currentImage);
 	vk::raii::CommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer);
