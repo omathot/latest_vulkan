@@ -239,16 +239,13 @@ vk::raii::ImageView HelloTriangleApplication::createImageView(VMAImage& image, v
 }
 
 void HelloTriangleApplication::createDescriptorSetLayout() {
-	vk::DescriptorSetLayoutBinding uboLayoutBinding = {
-		.binding = 0,
-		.descriptorType = vk::DescriptorType::eUniformBuffer,
-		.descriptorCount = 1,
-		.stageFlags = vk::ShaderStageFlagBits::eVertex,
-		.pImmutableSamplers = nullptr,
+	std::array bindings = {
+		vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr),
+		vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
 	};
 	vk::DescriptorSetLayoutCreateInfo layoutInfo = {
-		.bindingCount = 1,
-		.pBindings = &uboLayoutBinding,
+		.bindingCount = static_cast<uint32_t>(bindings.size()),
+		.pBindings = bindings.data(),
 	};
 	descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
 }
@@ -361,7 +358,7 @@ void HelloTriangleApplication::createCommandPool() {
 
 void HelloTriangleApplication::createTextureImage() {
 	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(TEXTURE_LOCATION, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	if (!pixels)
 		throw std::runtime_error("Failed to load texture image!");
 
@@ -434,9 +431,8 @@ void HelloTriangleApplication::transitionImageLayout(const VMAImage& image, vk::
 		srcStage = vk::PipelineStageFlagBits::eTransfer;
 		dstStage = vk::PipelineStageFlagBits::eFragmentShader;
 	}
-	else {
+	else
 		throw std::runtime_error("Unsupported layout transition!");
-	}
 	commandBuffer.pipelineBarrier(srcStage, dstStage, {}, {}, nullptr, barrier);
 
 	endSingleTimeCommands(commandBuffer);
@@ -528,14 +524,23 @@ void HelloTriangleApplication::createUniformBuffers() {
 	}
 }
 
-
+/*
+	Inadequate descriptor pools are a good example of a problem that the validation layers will not catch: As of Vulkan 1.1,
+	vkAllocateDescriptorSets may fail with the error code VK_ERROR_POOL_OUT_OF_MEMORY if the pool is not sufficiently large, but the driver may also
+	try to solve the problem internally. This means that sometimes (depending on hardware, pool size and allocation size) the driver will let us get away
+	with an allocation that exceeds the limits of our descriptor pool. Other times, vkAllocateDescriptorSets will fail and return VK_ERROR_POOL_OUT_OF_MEMORY.
+	This can be particularly frustrating if the allocation succeeds on some machines, but fails on others.
+*/
 void HelloTriangleApplication::createDescriptorPool() {
-	vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT);
+	std::array poolSize = {
+		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+		vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT)
+	};
 	vk::DescriptorPoolCreateInfo poolInfo = {
 		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
-		.poolSizeCount = 1,
-		.pPoolSizes = &poolSize
+		.poolSizeCount = static_cast<uint32_t>(poolSize.size()),
+		.pPoolSizes = poolSize.data()
 	};
 	descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 }
@@ -555,15 +560,30 @@ void HelloTriangleApplication::createDescriptorSets() {
 			.offset = 0,
 			.range = sizeof(UniformBufferObject)
 		};
-		vk::WriteDescriptorSet descriptorWrite = {
-			.dstSet = descriptorSets[i],
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = vk::DescriptorType::eUniformBuffer,
-			.pBufferInfo = &bufferInfo,
+		vk::DescriptorImageInfo imageInfo = {
+			.sampler = textureSampler,
+			.imageView = textureImageView,
+			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 		};
-		device.updateDescriptorSets(descriptorWrite, {});
+		std::array descriptorWrites = {
+			vk::WriteDescriptorSet {
+				.dstSet = descriptorSets[i],
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eUniformBuffer,
+				.pBufferInfo = &bufferInfo,
+			},
+			vk::WriteDescriptorSet {
+				.dstSet = descriptorSets[i],
+				.dstBinding = 1,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.pImageInfo = &imageInfo
+			}
+		};
+		device.updateDescriptorSets(descriptorWrites, {});
 	}
 }
 
@@ -778,25 +798,6 @@ void HelloTriangleApplication::pickPhysicalDevice() {
 	if (devIter == devices.end()) {
 		throw std::runtime_error("Failed to find a suitable GPU");
 	}
-
-	// -- Select best based on score. For now keeping tutorial version
-	// std::multimap<int, vk::raii::PhysicalDevice> candidates;
-	// for (const auto& device : devices) {
-	// 	auto deviceProperties = device.getProperties();
-	// 	auto deviceFeatures = device.getFeatures();
-	// 	uint32_t score = 0;
-	// 	if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
-	// 		score += 1000;
-	// 	score += deviceProperties.limits.maxImageDimension2D;
-	// 	if (!deviceFeatures.geometryShader)
-	// 		continue;
-	// 	candidates.insert(std::make_pair(score, device));
-	// }
-	// if (candidates.rbegin()->first > 0) {
-	// 	physicalDevice = candidates.rbegin()->second;
-	// } else {
-	// 	throw std::runtime_error("Failed to find a suitable GPU!");
-	// }
 }
 
 void HelloTriangleApplication::createLogicalDevice() {
@@ -828,13 +829,12 @@ void HelloTriangleApplication::createLogicalDevice() {
 			}
 		}
 	}
-	if ((graphicsIndex == queueFamilyProperties.size()) || (presentIndex == queueFamilyProperties.size())) {
+	if ((graphicsIndex == queueFamilyProperties.size()) || (presentIndex == queueFamilyProperties.size()))
 		throw std::runtime_error("Could not find a queue for graphics or present -> terminating");
-	}
 
 	// query Vulkan 1.3 features
 	vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-		{.features = {.samplerAnisotropy= true}},                                                     // vk::PhysicalDeviceFeatures2
+		{.features = {.samplerAnisotropy= true}},               // vk::PhysicalDeviceFeatures2
 		{.synchronization2 = true, .dynamicRendering = true },  // vk::PhysicalDeviceVulkan13Features
 		{.extendedDynamicState = true }                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
 	};
@@ -884,6 +884,7 @@ uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, vk::Memor
 	throw std::runtime_error("Failed to find suitable memory type!");
 }
 
+
 vk::raii::CommandBuffer HelloTriangleApplication::beginSingleTimeCommands() {
 	vk::CommandBufferAllocateInfo allocInfo(commandPool, vk::CommandBufferLevel::ePrimary, 1);
 	vk::raii::CommandBuffer commandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
@@ -920,6 +921,9 @@ void HelloTriangleApplication::cleanup() {
 	vmaDestroyImage(allocator, textureImage.image, textureImage.allocation);
 	vmaDestroyAllocator(allocator);
 
+	// tried to keep as much as possible raii, so far nothing else to cleanup
+
+	// GLFW cleanup
 	glfwDestroyWindow(window);
 	glfwTerminate();
 }
@@ -1008,9 +1012,10 @@ vk::VertexInputBindingDescription Vertex::getBindingDescription() {
 	return {.binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex};
 }
 
-std::array<vk::VertexInputAttributeDescription, 2> Vertex::getAttributeDescriptions() {
+std::array<vk::VertexInputAttributeDescription, 3> Vertex::getAttributeDescriptions() {
 	return {
 		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)),
 		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
+		vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord)),
 	};
 }

@@ -1,8 +1,13 @@
 module;
 #define VMA_IMPLEMENTATION
 #define VMA_VULKAN_VERSION 1004000
+
+#ifndef NDEBUG
+#define VMA_DEBUG_INITIALIZE_ALLOCATIONS 1
+#define VMA_DEBUG_DETECT_CORRUPTION 1
+#endif
+
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-#define VMA_DEBUG_INITIALIZE_ALLOCTIONS 1
 
 #include <vulkan/vulkan_core.h>
 #include <GLFW/glfw3.h>
@@ -12,13 +17,13 @@ module;
 
 #include <cstdint>
 #include <vector>
-#include <memory>
 
 export module triangleApplication;
 
 constexpr uint32_t WIDTH  = 800;
 constexpr uint32_t HEIGHT = 600;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+constexpr const char* TEXTURE_LOCATION = "textures/sick-EP.jpg"; // lagtrain.jpg sick-EP.jpg texture.jpg
 
 std::vector validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -28,6 +33,7 @@ std::vector<const char*> requiredDeviceExtensions = {
 	vk::KHRSpirv14ExtensionName,
 	vk::KHRSynchronization2ExtensionName,
 	vk::KHRCreateRenderpass2ExtensionName,
+
 	// needed for m1mac asahi linux
 	vk::KHRShaderDrawParametersExtensionName
 };
@@ -40,9 +46,10 @@ constexpr bool enableValidationLayers = true;
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
+	glm::vec2 texCoord;
 
 	static vk::VertexInputBindingDescription getBindingDescription();
-	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions();
+	static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions();
 };
 // alignment spec: https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-layout
 struct UniformBufferObject {
@@ -53,21 +60,14 @@ struct UniformBufferObject {
 
 // shader data
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f},  {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f},   {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f},  {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f},  {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f},   {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f},  {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
-// export const std::vector<Vertex> vertices = {
-//     {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-//     {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-//     {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-// };
-
-
 
 struct VMABuffer {
 	VkBuffer buffer;
@@ -120,6 +120,7 @@ private:
 	vk::raii::PipelineLayout pipelineLayout           = nullptr;
 	vk::raii::Pipeline graphicsPipeline               = nullptr;
 
+	vk::raii::CommandBuffer setupCommandBuffer = nullptr;
 	vk::raii::DescriptorPool descriptorPool           = nullptr;
 	std::vector<vk::raii::DescriptorSet> descriptorSets;
 	vk::raii::CommandPool commandPool                 = nullptr;
